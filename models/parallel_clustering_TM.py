@@ -50,7 +50,7 @@ class ParallelCluster():
     def get_docs_embeddings(self):
         embeddings = self.model.encode(self.dataframe[self.tgt_col].tolist(), show_progress_bar=True)
         embeddings = np.asarray(embeddings.astype('float32'))
-        print(">> Data embeddings shape(Items x PLM_output) :", embeddings.shape)
+        print(">> Data embeddings shape(Items x PLM_output) :", embeddings.shape, flush=True)
         return embeddings
 
     ######################
@@ -91,7 +91,6 @@ class ParallelCluster():
     def get_ids(self, cluster):
         # [cluster_ids, [cluster_head, cos_sim_scores]]
         return [transaction[0] for transaction in cluster]
-
 
     # Reorder Many Clusters 
     def reorder_and_filter_clusters(self, clusters, embeddings, threshold, parallel):
@@ -147,7 +146,7 @@ class ParallelCluster():
             n = math.ceil(len(txs) / chunk_size)
             k, m = divmod(len(txs), n)
         except ZeroDivisionError:
-            print(">> Precautions! Reduce the number of Iterations or the Threshold!")
+            print(">> Precautions! Reduce the number of Iterations or the Threshold!", flush=True)
         return (txs[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)] for i in range(n))   
 
 
@@ -297,8 +296,8 @@ class ParallelCluster():
     
         with Parallel(n_jobs=cores) as parallel:
             for iteration in range(iterations):
-                print('===== Iteration {:} / {:} ====='.format(iteration + 1, iterations))
-                print("\n")
+                print('===== Iteration {:} / {:} ====='.format(iteration + 1, iterations), flush=True)
+                print("\n", flush=True)
 
                 unclustered_ids = self.get_unclustured_ids(self.ids, clusters)
                 cluster_ids = list(clusters.keys())
@@ -335,7 +334,7 @@ class ParallelCluster():
             
                 new_clusters = self.filter_clusters(new_clusters, min_cluster_size)
                 clusters = {**new_clusters, **clusters}
-                print(">> Number of Total Clusters : ", len(clusters))
+                print(">> Number of Total Clusters : ", len(clusters), flush=True)
                 clusters = self.sort_clusters(clusters)
 
                 unclustered_ids = self.get_unclustured_ids(self.ids, clusters)
@@ -350,8 +349,8 @@ class ParallelCluster():
                 clusters = self.sort_clusters(clusters)
                 unclustered_ids = self.get_unclustured_ids(self.ids, clusters)
                 clustured_ids = self.get_clustured_ids(clusters)
-                print(f">> Percentage clusted Doc Embeddings : {len(clustured_ids) / (len(clustured_ids) + len(unclustered_ids)) * 100:.2f}%")
-                print("\n")
+                print(f">> Percentage clusted Doc Embeddings : {len(clustured_ids) / (len(clustured_ids) + len(unclustered_ids)) * 100:.2f}%", flush=True)
+                print("\n", flush=True)
         return clusters, unclustered_ids
 
     #########################
@@ -416,7 +415,7 @@ class ParallelCluster():
 
     def extract_top_n_words_per_topic(self, dataframe, n, ngram_range=(1,1), en=True):
         docs_per_topic, tf_idf, count = self.c_tf_idf(dataframe, ngram_range=ngram_range, en=en)
-        words = count.get_feature_names()
+        words = count.get_feature_names_out()
         labels = list(docs_per_topic.Topic)
         tf_idf_transposed = tf_idf.T
         indices = tf_idf_transposed.argsort()[:, -n:]

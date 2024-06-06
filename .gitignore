@@ -1,0 +1,8 @@
+# ignore /data-tw /data-tw-decompress
+/data-tw
+/data-tw-decompress
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class

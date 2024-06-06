@@ -25,8 +25,11 @@ class SLS():
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         # PLMs
         self.model = self.PLMs()
+        # Auto get embedding dimension
+        self.embedding_dim = self.get_embedding_dim()
         # Gate formula
-        self.gate_layer = torch.nn.Linear(768 * 2, 768)
+        self.gate_layer = torch.nn.Linear(self.embedding_dim * 2, self.embedding_dim)
+        # self.gate_layer = torch.nn.Linear(768 * 2, 768)
         self.sigmoid = torch.nn.Sigmoid()
         # Documents embeddings
         # 1. Using merged sentence-level embeddings
@@ -59,7 +62,14 @@ class SLS():
                                            pooling_mode_max_tokens = False)
             model = SentenceTransformer(modules=[word_embedding_model, pooling_model], device=self.device)
 
-        return model   
+        return model
+    
+    def get_embedding_dim(self):
+        # Get the embedding dimension of the model
+        dummy_input = ["This is a dummy sentence."]
+        embeddings = self.model.encode(dummy_input)
+        print(">> Embedding dimension of the model :", embeddings.shape[1], flush=True)
+        return embeddings.shape[1]
 
     ##########################
     # Embedding Modelization #
@@ -78,20 +88,20 @@ class SLS():
         for idx, sentences_split in enumerate(split_list):
             sent_embeddings = self.model.encode(sentences_split)
             sent_embeddings = torch.from_numpy(sent_embeddings)
-            embedding_sum = sent_embeddings[0]
+            embedding_sum = sent_embeddings[0] # ensure the shape is (1, embedding_dim)
             for emb in sent_embeddings[1:]:
-                embedding_sum = self.gate_sum(embedding_sum, emb)
+                embedding_sum = self.gate_sum(embedding_sum, emb) # ensure the shape is (1, embedding_dim)
             new_embeddings.append(embedding_sum.detach().numpy())
 
         docs_embeddings = np.asarray(new_embeddings, dtype = np.float32)
-        print(">> Split and Merage embeddings shape(Items x PLMs_dim) :", docs_embeddings.shape)
+        print(">> Split and Merage embeddings shape(Items x PLMs_dim) :", docs_embeddings.shape, flush=True)
         return docs_embeddings
         
     # 2. Generate directly documents-level embedding
     def get_docs_embeddings(self):
         embeddings = self.model.encode(self.dataframe[self.doc_col].tolist(), show_progress_bar=True)
         embeddings = np.asarray(embeddings.astype('float32'))
-        print(">> Documents embeddings shape(Items x PLMs_dim) :", embeddings.shape)
+        print(">> Documents embeddings shape(Items x PLMs_dim) :", embeddings.shape, flush=True)
 
         return embeddings
     
@@ -99,7 +109,7 @@ class SLS():
     def get_keys_embeddings(self):
         embeddings = self.model.encode([' '.join(i.split(', ')) for i in self.dataframe[self.key_col]], show_progress_bar=True)
         embeddings = np.asarray(embeddings.astype('float32'))
-        print(">> Keywords embeddings shape(Items x PLMs_dim) :", embeddings.shape)
+        print(">> Keywords embeddings shape(Items x PLMs_dim) :", embeddings.shape, flush=True)
         
         return embeddings
     
@@ -178,22 +188,12 @@ class SLS():
         df_idx : int
         cluster : bool
         """
-        sim_dict = dict()
-        info = self.dataframe.iloc[df_idx]
-        sim_dict['Topic'] = info['Topic']
-        sim_dict['keywords'] = info['keywords']
-        sim_dict['case_name'] = info['case_name']
-        sim_dict['case_number'] = info['case_number']
-        sim_dict['date'] = info['date']
-        sim_dict['judgment_issue'] = info['judgment_issue']
-        sim_dict['judgment_summary'] = info['judgment_summary']
-        #sim_dict['judgment_contents'] = info['judgment_contents']
-        return sim_dict
+        return self.dataframe.iloc[df_idx].to_dict()
 
     ###################
     # Semantic Search #
     ###################
-    def semantic_search(self, user_query, top_k, index, print_results = False):
+    def semantic_search(self, user_query, top_k, index):
         """
         user_query : str(input query)
         top_k : int(top k based on similarity score)
@@ -203,26 +203,13 @@ class SLS():
         print : bool(print result or not)
         """
         start = time.time()
-        query_vector = self.model.encode([user_query]) # (1, 768)
+        query_vector = self.model.encode([user_query]) # (1, embedding_dim)
         # Query-Final embeddings similarity by FAISS
         top_similarity = index.search(query_vector, top_k)
-        print("\n === Calculate run time : {} ms === \n".format(round((time.time()-start)*1000, 4)))
+        print("\n === Calculate run time : {} ms === \n".format(round((time.time()-start)*1000, 4)), flush=True)
         top_similarity_ids = top_similarity[1].flatten().tolist()               # Top_query ids
         top_similarity_ids = list(np.unique(top_similarity_ids))                # Id unique cheack
         # Query-Final embeddings similarity scores
         similarity_score = top_similarity[0].flatten().tolist()                 # Similarity_Score
-        result = [self.fetch_info(idx) for idx in top_similarity_ids]
-
-        # Print
-        if print_results:
-            print(">> Write your case :", user_query)
-            for i, out in enumerate(result):
-                print("\n >> Top {} - Case name (Number) : {} ({})  \n | Cluster : {} \n | Extracted keywords : {} \n | Date : {} | Judgment Issue : {} \n | Judgment Summary : {}".format(i+1,
-                                                                                                                                                                                                    out['case_name'],
-                                                                                                                                                                                                    out['case_number'],
-                                                                                                                                                                                                    out['Topic'],
-                                                                                                                                                                                                    out['keywords'],
-                                                                                                                                                                                                    out['date'],
-                                                                                                                                                                                                    out['judgment_issue'],
-                                                                                                                                                                                                    out['judgment_summary']))
-        return result, similarity_score
+        result = [{**self.fetch_info(idx), "L2 Distance": score} for idx, score in zip(top_similarity_ids, similarity_score)]
+        return result
